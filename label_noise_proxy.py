@@ -1,9 +1,8 @@
-# label_noise_proxy.py
 """
-Quantify cross-modal supervision noise proxy (Section 3.1 idea):
+Quantify cross-modal supervision noise proxy:
 Distance between a radar-derived energy centroid and the center of GT camera boxes.
 
-Works directly on your dataset structure:
+Works directly on dataset triples:
   (ear_path, labels_json/*.json, color_frame)
 
 Uses the SAME EAR->2D processing as yolo_utils.load_ear_as_image(),
@@ -12,7 +11,7 @@ but keeps the normalized float map to compute a stable centroid.
 Outputs:
   - per_frame_metrics.csv
   - summary.json
-  - histogram.png (optional)
+  - hist_d_box.png (optional)
 """
 
 import os
@@ -25,29 +24,25 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-from yolo_utils import build_items_multi, collapse_class_id  # uses your existing mapping
+from config import load_config
+from yolo_utils import build_items_multi, collapse_class_id
 
 
 def load_ear_norm_map(ear_path: str, out_w: int, out_h: int) -> np.ndarray:
     """
     Mirror of yolo_utils.load_ear_as_image() but returns float32 map in [0,1]
-    (before uint8 quantization). :contentReference[oaicite:4]{index=4}
+    before uint8 quantization.
     """
     ear = np.load(ear_path).astype(np.float32)
 
-    # EAR cube -> 2D map (mean over elevation if 3D)
     if ear.ndim == 3:
         ear2d = ear.mean(axis=0)
     else:
         ear2d = ear
 
-    # log compression
     ear2d = np.log(ear2d + 1e-6)
-
-    # resize to (W,H) in OpenCV order (width,height)
     ear_resized = cv2.resize(ear2d, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
 
-    # per-frame standardization + min-max to [0,1]
     m = float(ear_resized.mean())
     s = float(ear_resized.std()) + 1e-6
     ear_norm = (ear_resized - m) / s
@@ -56,12 +51,11 @@ def load_ear_norm_map(ear_path: str, out_w: int, out_h: int) -> np.ndarray:
     return ear_norm.astype(np.float32)
 
 
-def energy_centroid(R: np.ndarray, percentile: float = 95.0) -> tuple[float, float] | None:
+def energy_centroid(R: np.ndarray, percentile: float = 95.0):
     """
     Compute energy-weighted centroid after percentile thresholding.
     Returns (x_r, y_r) in pixel coordinates, or None if no evidence.
     """
-    # threshold high-energy returns
     t = np.percentile(R, percentile)
     R_thr = R - t
     R_thr[R_thr < 0] = 0.0
@@ -87,7 +81,6 @@ def pick_target_box(boxes_xyxy, policy="largest"):
     if policy == "first":
         return boxes_xyxy[0]
 
-    # largest area
     best = None
     best_area = -1.0
     for (x1, y1, x2, y2) in boxes_xyxy:
@@ -100,31 +93,61 @@ def pick_target_box(boxes_xyxy, policy="largest"):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", type=str, required=True, help="Dataset root directory")
-    ap.add_argument("--W", type=int, default=480, help="Width used in your pipeline (default 480)")
-    ap.add_argument("--H", type=int, default=640, help="Height used in your pipeline (default 640)")
-    ap.add_argument("--percentile", type=float, default=95.0, help="Percentile for energy thresholding")
-    ap.add_argument("--target", type=str, default="person_with_knife",
-                    choices=["person_with_knife", "person_without_knife", "all"],
-                    help="Which GT class to evaluate (after collapse_class_id mapping)")
-    ap.add_argument("--out", type=str, default="label_noise_proxy_out", help="Output folder")
-    ap.add_argument("--plot", action="store_true", help="Save histogram plot")
+    ap.add_argument("--config", type=str, default="config.yaml")
+    ap.add_argument("--mode", type=str, choices=["train", "test"], default="test")
+    ap.add_argument("--percentile", type=float, default=None)
+    ap.add_argument(
+        "--target",
+        type=str,
+        default=None,
+        choices=["person_with_knife", "person_without_knife", "all"],
+    )
+    ap.add_argument("--out", type=str, default=None)
+    ap.add_argument("--plot", action="store_true")
     args = ap.parse_args()
 
-    W, H = args.W, args.H
-    out_dir = Path(args.out)
+    config = load_config(args.config)
+
+    # Dataset root
+    if args.mode == "train":
+        root_dir = config["paths"]["train_root"]
+    else:
+        root_dir = config["paths"]["test_root"]
+
+    # Dimensions
+    W = config["training"]["img_width"]
+    H = config["training"]["img_height"]
+
+    # Label noise settings (allow CLI override)
+    percentile = (
+        args.percentile
+        if args.percentile is not None
+        else config.get("label_noise", {}).get("percentile", 95.0)
+    )
+    target = (
+        args.target
+        if args.target is not None
+        else config.get("label_noise", {}).get("target", "person_with_knife")
+    )
+    out_dir = Path(
+        args.out
+        if args.out is not None
+        else config["paths"].get("label_noise_out", "label_noise_proxy_out")
+    )
+    do_plot = args.plot or config.get("label_noise", {}).get("plot", False)
+
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # class ids after collapse_class_id: 0=without_knife, 1=with_knife :contentReference[oaicite:5]{index=5}
-    if args.target == "person_with_knife":
+    # class ids after collapse_class_id: 0=without_knife, 1=with_knife
+    if target == "person_with_knife":
         target_ids = {1}
-    elif args.target == "person_without_knife":
+    elif target == "person_without_knife":
         target_ids = {0}
     else:
         target_ids = {0, 1}
 
-    print(f"Scanning items under: {args.root}")
-    items = build_items_multi(args.root)
+    print(f"Scanning items under: {root_dir}")
+    items = build_items_multi(root_dir)
     if not items:
         raise RuntimeError("No items found. Check root path / folder structure.")
 
@@ -133,15 +156,13 @@ def main():
     no_gt = 0
 
     for idx, (ear_path, lab_path, color_path) in enumerate(items):
-        # radar norm map
         R = load_ear_norm_map(ear_path, W, H)
-        ctr = energy_centroid(R, percentile=args.percentile)
+        ctr = energy_centroid(R, percentile=percentile)
         if ctr is None:
             no_evidence += 1
             continue
         x_r, y_r = ctr
 
-        # load GT json boxes (camera-space) 
         with open(lab_path, "r") as f:
             data = json.load(f)
 
@@ -150,9 +171,9 @@ def main():
             cid = collapse_class_id(int(b["class_id"]))
             if cid not in target_ids:
                 continue
+
             x1, y1, x2, y2 = map(float, b["bbox_xyxy"])
 
-            # clip to expected bounds (consistent with your exporter) :contentReference[oaicite:7]{index=7}
             x1 = max(0.0, min(x1, W - 1))
             x2 = max(0.0, min(x2, W - 1))
             y1 = max(0.0, min(y1, H - 1))
@@ -195,15 +216,17 @@ def main():
             "box_h": bh,
         })
 
-    # write CSV
+    # CSV
     csv_path = out_dir / "per_frame_metrics.csv"
     with open(csv_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else [])
-        writer.writeheader()
-        for r in rows:
-            writer.writerow(r)
+        fieldnames = list(rows[0].keys()) if rows else []
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if fieldnames:
+            writer.writeheader()
+            for r in rows:
+                writer.writerow(r)
 
-    # summary stats
+    # Summary
     d_px_arr = np.array([r["d_px"] for r in rows], dtype=float) if rows else np.array([])
     d_box_arr = np.array([r["d_box"] for r in rows], dtype=float) if rows else np.array([])
 
@@ -226,8 +249,8 @@ def main():
         "N_no_target_gt": int(no_gt),
         "W": W,
         "H": H,
-        "percentile": float(args.percentile),
-        "target": args.target,
+        "percentile": float(percentile),
+        "target": target,
         "d_px": summarize(d_px_arr),
         "d_box": summarize(d_box_arr),
     }
@@ -243,13 +266,12 @@ def main():
     print(f"No radar evidence frames: {no_evidence}")
     print(f"No target GT frames:      {no_gt}")
 
-    # optional histogram plot
-    if args.plot and d_box_arr.size > 0:
+    if do_plot and d_box_arr.size > 0:
         plt.figure()
         plt.hist(d_box_arr, bins=50)
         plt.xlabel("d_box (centroid-to-box-center distance / box diagonal)")
         plt.ylabel("Count")
-        plt.title(f"Cross-modal misalignment proxy (target={args.target})")
+        plt.title(f"Cross-modal misalignment proxy (target={target})")
         plot_path = out_dir / "hist_d_box.png"
         plt.savefig(plot_path, dpi=200, bbox_inches="tight")
         plt.close()

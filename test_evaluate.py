@@ -1,8 +1,8 @@
-# test_evaluate.py
-
 import os
 import multiprocessing as mp
+import argparse
 from ultralytics import YOLO
+from config import load_config
 
 from yolo_utils import (
     build_items_multi,
@@ -17,28 +17,24 @@ from yolo_utils import (
 # CONFIG
 # -------------------------------------------------------
 
-TEST_ROOT_DIR = r"C:\Users\n1071552\Desktop\projects\data_collectn\test_data"
-TEST_OUT_ROOT = "yolo_radar_test_ds"
+parser = argparse.ArgumentParser()
+parser.add_argument("--config", type=str, default="config.yaml")
+args = parser.parse_args()
 
-W, H = 480, 640
+config = load_config(args.config)
 
-MODEL_PATHS = {
-    "yolov8":  "yolo_radar_runs/yolov8/weights/best.pt",
-    "yolov9":  "yolo_radar_runs/yolov9/weights/best.pt",
-    "yolov10": "yolo_radar_runs/yolov10/weights/best.pt",
-    "yolov11": "yolo_radar_runs/yolov11/weights/best.pt",
-    "yolov12": "yolo_radar_runs/yolov12/weights/best.pt",
-}
+TEST_ROOT_DIR = config["paths"]["test_root"]
+TEST_OUT_ROOT = config["paths"]["test_dataset_out"]
+TEST_VIS_OUT = config["paths"]["test_vis_out"]
 
-CONF_THRESHOLDS = {
-    "yolov8":  0.37,
-    "yolov9":  0.27,
-    "yolov10": 0.34,
-    "yolov11": 0.43,
-    "yolov12": 0.38,
-}
+W = config["training"]["img_width"]
+H = config["training"]["img_height"]
 
-IOU_THRESHOLD = 0.50
+MODEL_PATHS = config["test_models"]
+CONF_THRESHOLDS = config["evaluation"]["conf_thresholds"]
+IOU_THRESHOLD = config["evaluation"]["iou_threshold"]
+N_BOOT = config["evaluation"].get("n_boot", 1000)
+SEED = config["evaluation"].get("seed", 42)
 
 
 def fmt_ci(ci):
@@ -46,9 +42,7 @@ def fmt_ci(ci):
     return f"{mean:.3f} [{lo:.3f},{hi:.3f}]"
 
 
-
 def main():
-
     # ---------------------------------------------------
     # 1. Build test items
     # ---------------------------------------------------
@@ -126,14 +120,14 @@ def main():
             evaluate_metrics_fn=evaluate_metrics,
             iou_thres=IOU_THRESHOLD,
             conf=conf_thres,
-            n_boot=1000,
-            seed=42,
+            n_boot=N_BOOT,
+            seed=SEED,
             class_name="person_with_knife",
             verbose=True
         )
 
         # ---------------------------
-        # Store results (ONE row)
+        # Store results
         # ---------------------------
         results_table.append({
             "model": model_key,
@@ -153,7 +147,7 @@ def main():
         # ---------------------------
         # Visualisation
         # ---------------------------
-        vis_dir = os.path.join("test_visualisations", model_key)
+        vis_dir = os.path.join(TEST_VIS_OUT, model_key)
         visualize_predictions(
             model,
             test_items,
@@ -183,7 +177,6 @@ def main():
             f"{fmt_ci(row['MR_CI']):<22} "
             f"{fmt_ci(row['FAR_CI']):<22} "
             f"{fmt_ci(row['F1_CI']):<22} "
-
             f"{row['FPS']:<6.1f}"
         )
 

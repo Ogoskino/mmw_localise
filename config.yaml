@@ -1,0 +1,72 @@
+project:
+  name: mmw_localise
+
+paths:
+  train_root: "C:/Users/n1071552/Desktop/projects/data_collectn/realsense_data_OD"
+  test_root: "C:/Users/n1071552/Desktop/projects/data_collectn/test_data"
+  ablation_out: "ablation_runs"
+  split_json: "dataset_split.json"
+  yolo_dataset_out: "yolo_radar_ds"
+  yolo_project_out: "yolo_radar_runs"
+  best_vis_out: "best_visualisations"
+  test_dataset_out: "yolo_radar_test_ds"
+  test_vis_out: "test_visualisations"
+  label_noise_out: "label_noise_proxy_out"
+
+split:
+  seed: 42
+  val_size: 1062   # subject-based split boundary
+
+training:
+  img_width: 480
+  img_height: 640
+  epochs: 180
+  batch_size: 16
+  device: 0
+
+models:
+  yolov8: "yolov8n.pt"
+  yolov9: "yolov9t.pt"
+  yolov10: "yolov10n.pt"
+  yolov11: "yolo11n.pt"
+  yolov12: "yolo12n.pt"
+
+test_models:
+  yolov8: "yolo_radar_runs/yolov8/weights/best.pt"
+  yolov9: "yolo_radar_runs/yolov9/weights/best.pt"
+  yolov10: "yolo_radar_runs/yolov10/weights/best.pt"
+  yolov11: "yolo_radar_runs/yolov11/weights/best.pt"
+  yolov12: "yolo_radar_runs/yolov12/weights/best.pt"
+
+evaluation:
+  iou_threshold: 0.50
+  n_boot: 1000
+  seed: 42
+  conf_thresholds:
+    yolov8: 0.37
+    yolov9: 0.27
+    yolov10: 0.34
+    yolov11: 0.43
+    yolov12: 0.38
+
+ablations:
+  default_model_name: "yolov8"
+  default_pretrained: "yolov8n.pt"
+  configs:
+    - name: "elev_mean"
+      elev_pool: "mean"
+      channel_mode: "replicate"
+    - name: "elev_max"
+      elev_pool: "max"
+      channel_mode: "replicate"
+    - name: "elev_sum"
+      elev_pool: "sum"
+      channel_mode: "replicate"
+    - name: "channels_elev_stats"
+      elev_pool: "mean"
+      channel_mode: "elev_stats"
+
+label_noise:
+  percentile: 95.0
+  target: "person_with_knife"
+  plot: true

@@ -1,24 +1,17 @@
-# run_rep_ablations.py
 """
-Representation ablations (4.1 / 4.2 / 4.3 support) with separate outputs.
+Representation ablations for radar-to-image construction.
 
-- Reads your dataset using build_items_multi() (ear, labels_json, color)
-- Uses dataset_split.json indices (same as train_yolo_updated.py)
+- Reads dataset using build_items_multi()
+- Uses dataset_split.json indices
 - Exports a YOLO dataset per representation config
-- Trains a YOLO model (default yolov8n.pt) per config
-- Evaluates on validation using your evaluate_metrics() and saves results
-
-Outputs per config:
-  ablation_runs/<cfg_name>/
-    dataset/...
-    training/...
-    metrics_val.json
-    metrics_val.csv
+- Trains a YOLO model per config
+- Evaluates on validation using evaluate_metrics()
 """
 
 import os
 import json
 import csv
+import argparse
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -26,6 +19,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
+from config import load_config
 from yolo_utils import (
     build_items_multi,
     collapse_class_id,
@@ -37,13 +31,23 @@ from yolo_utils import (
 # -----------------------------
 # Config
 # -----------------------------
-W, H = 480, 640
-SPLIT_JSON = "dataset_split.json"
+parser = argparse.ArgumentParser()
+parser.add_argument("--config", type=str, default="config.yaml")
+args = parser.parse_args()
 
-DEFAULT_MODEL_NAME = "yolov8"
-DEFAULT_PRETRAIN = "yolov8n.pt"
+config = load_config(args.config)
 
-BASE_OUT = Path("ablation_runs")
+W = config["training"]["img_width"]
+H = config["training"]["img_height"]
+EPOCHS = config["training"]["epochs"]
+BATCH = config["training"]["batch_size"]
+
+ROOT_DIR = config["paths"]["train_root"]
+SPLIT_JSON = config["paths"]["split_json"]
+BASE_OUT = Path(config["paths"]["ablation_out"])
+
+DEFAULT_MODEL_NAME = config["ablations"]["default_model_name"]
+DEFAULT_PRETRAIN = config["ablations"]["default_pretrained"]
 
 
 # =========================================================
@@ -51,10 +55,6 @@ BASE_OUT = Path("ablation_runs")
 # =========================================================
 
 def ear_to_channels(ear: np.ndarray, elev_mode: str) -> np.ndarray:
-    """
-    Convert EAR cube -> (H,W) float map before normalization.
-    elev_mode: 'mean'|'max'|'sum'|'std'
-    """
     if ear.ndim == 3:
         if elev_mode == "mean":
             m = ear.mean(axis=0)
@@ -67,16 +67,11 @@ def ear_to_channels(ear: np.ndarray, elev_mode: str) -> np.ndarray:
         else:
             raise ValueError(f"Unknown elev_mode: {elev_mode}")
     else:
-        # already 2D
         m = ear
     return m.astype(np.float32)
 
 
 def normalize_to_uint8(img2d: np.ndarray, out_w: int, out_h: int) -> np.ndarray:
-    """
-    Mirrors yolo_utils.load_ear_as_image() pipeline but for arbitrary 2D input:
-      log -> resize -> zscore -> minmax -> uint8
-    """
     img2d = np.log(img2d + 1e-6)
     img2d = cv2.resize(img2d, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
 
@@ -96,15 +91,6 @@ def make_radar_image(
     elev_pool: str = "mean",
     channel_mode: str = "replicate",
 ) -> np.ndarray:
-    """
-    Returns uint8 image in shape (H, W, 3).
-
-    elev_pool: 'mean'|'max'|'sum'
-      - used for channel_mode='replicate'
-    channel_mode:
-      - 'replicate': single map (from elev_pool) replicated to 3 channels (your baseline)
-      - 'elev_stats': 3 channels from EAR stats: mean/max/std (4.3 practical alternative)
-    """
     ear = np.load(ear_path).astype(np.float32)
 
     if channel_mode == "replicate":
@@ -114,10 +100,9 @@ def make_radar_image(
         return img
 
     if channel_mode == "elev_stats":
-        # 3 distinct channels → not arbitrary: captures different elevation behaviors
         ch1 = normalize_to_uint8(ear_to_channels(ear, "mean"), out_w, out_h)
-        ch2 = normalize_to_uint8(ear_to_channels(ear, "max"),  out_w, out_h)
-        ch3 = normalize_to_uint8(ear_to_channels(ear, "std"),  out_w, out_h)
+        ch2 = normalize_to_uint8(ear_to_channels(ear, "max"), out_w, out_h)
+        ch3 = normalize_to_uint8(ear_to_channels(ear, "std"), out_w, out_h)
         img = np.stack([ch1, ch2, ch3], axis=-1)
         return img
 
@@ -125,7 +110,7 @@ def make_radar_image(
 
 
 # =========================================================
-# Exporter (custom, based on your yolo_utils._write_yolo_split)
+# Exporter
 # =========================================================
 
 def write_yolo_split_custom(split: str, items, out_root: Path, out_w: int, out_h: int,
@@ -151,7 +136,6 @@ def write_yolo_split_custom(split: str, items, out_root: Path, out_w: int, out_h
             cid = collapse_class_id(int(b["class_id"]))
             x1, y1, x2, y2 = map(float, b["bbox_xyxy"])
 
-            # clip to bounds (your existing logic)
             x1 = max(0.0, min(x1, out_w - 1))
             x2 = max(0.0, min(x2, out_w - 1))
             y1 = max(0.0, min(y1, out_h - 1))
@@ -164,7 +148,6 @@ def write_yolo_split_custom(split: str, items, out_root: Path, out_w: int, out_h
             xc = (x1 + x2) / 2.0
             yc = (y1 + y2) / 2.0
 
-            # normalized YOLO
             lines.append(f"{cid} {xc/out_w:.6f} {yc/out_h:.6f} {w/out_w:.6f} {h/out_h:.6f}")
 
         with open(lab_dir / name.replace(".png", ".txt"), "w") as f:
@@ -201,29 +184,27 @@ def export_dataset_custom(train_items, val_items, out_root: Path, out_w: int, ou
 @dataclass
 class RepConfig:
     name: str
-    elev_pool: str = "mean"           # mean|max|sum
-    channel_mode: str = "replicate"   # replicate|elev_stats
+    elev_pool: str = "mean"
+    channel_mode: str = "replicate"
 
 
 ABLATIONS = [
-    # 4.1 Elevation aggregation ablation (baseline replicate)
     RepConfig(name="elev_mean", elev_pool="mean", channel_mode="replicate"),
-    RepConfig(name="elev_max",  elev_pool="max",  channel_mode="replicate"),
-    RepConfig(name="elev_sum",  elev_pool="sum",  channel_mode="replicate"),
-
-    # 4.3 Practical channelization ablation
+    RepConfig(name="elev_max", elev_pool="max", channel_mode="replicate"),
+    RepConfig(name="elev_sum", elev_pool="sum", channel_mode="replicate"),
     RepConfig(name="channels_elev_stats", elev_pool="mean", channel_mode="elev_stats"),
 ]
+
+# If you want to load these from YAML instead, replace ABLATIONS with:
+# ABLATIONS = [RepConfig(**cfg) for cfg in config["ablations"]["configs"]]
 
 
 def save_metrics(out_dir: Path, metrics: dict):
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # JSON
     with open(out_dir / "metrics_val.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
-    # CSV (flat)
     flat_keys = sorted(metrics.keys())
     with open(out_dir / "metrics_val.csv", "w", newline="") as f:
         w = csv.writer(f)
@@ -235,65 +216,53 @@ def save_metrics(out_dir: Path, metrics: dict):
 def main(root_dir: str):
     BASE_OUT.mkdir(parents=True, exist_ok=True)
 
-    # Load items
     items = build_items_multi(root_dir)
     if not items:
         raise RuntimeError("No (ear,label,color) triples found. Check root_dir.")
 
-    # Load split indices (same logic as train_yolo_updated.py)
     with open(SPLIT_JSON, "r") as f:
         split = json.load(f)
+
     train_items = [items[i] for i in split["train"]]
-    val_items   = [items[i] for i in split["val"]]
+    val_items = [items[i] for i in split["val"]]
 
     print(f"Using split: {len(train_items)} train / {len(val_items)} val")
 
-    # Run each ablation
     for cfg in ABLATIONS:
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print(f"ABLATION: {cfg.name} | elev_pool={cfg.elev_pool} | channel_mode={cfg.channel_mode}")
-        print("="*60)
+        print("=" * 60)
 
         run_dir = BASE_OUT / cfg.name
-        ds_dir  = run_dir / "dataset"
+        ds_dir = run_dir / "dataset"
         train_dir = run_dir / "training"
 
-        # Export dataset
         yaml_path, val_paths = export_dataset_custom(
             train_items, val_items, ds_dir, W, H,
             elev_pool=cfg.elev_pool, channel_mode=cfg.channel_mode
         )
 
-        # Train (one model by default)
         model = YOLO(DEFAULT_PRETRAIN)
 
-        results = model.train(
+        model.train(
             data=yaml_path,
-            epochs=180,
+            epochs=EPOCHS,
             imgsz=(H, W),
-            batch=16,
+            batch=BATCH,
             project=str(train_dir),
             name=DEFAULT_MODEL_NAME,
             exist_ok=True,
         )
 
-        # Select operating point on val (same as your pipeline)
-
-
         best = find_best_operating_point(model, val_items, val_paths)
         best_conf = float(best["best_conf"])
-        #m = evaluate_metrics(model, val_items, val_paths, iou=0.5, conf=best_conf, verbose=True)
 
-
-        # Evaluate on val
         m = evaluate_metrics(model, val_items, val_paths, iou_thres=0.5, conf=best_conf, verbose=True)
 
-        # add metadata
         m["ablation_name"] = cfg.name
         m["elev_pool"] = cfg.elev_pool
         m["channel_mode"] = cfg.channel_mode
-        m["best_conf"] = float(best_conf)
-
+        m["best_conf"] = best_conf
 
         save_metrics(run_dir, m)
         print(f"Saved metrics to: {run_dir}")
@@ -302,9 +271,4 @@ def main(root_dir: str):
 
 
 if __name__ == "__main__":
-    # Example:
-    # python run_rep_ablations.py "C:\Users\...\realsense_data_OD"
-    import sys
-    if len(sys.argv) < 2:
-        raise SystemExit("Usage: python run_rep_ablations.py <root_dir>")
-    main(sys.argv[1])
+    main(ROOT_DIR)

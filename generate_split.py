@@ -1,34 +1,17 @@
-### generate_split.py
 import os
 import json
 import random
-
-# =========================================================
-#  Folder traversal: build (ear, label, color) triples
-#  (must match YOLO & FRCNN versions exactly)
-# =========================================================
+import argparse
+from config import load_config
 
 def build_items_multi(root_dir, image_exts=(".png", ".jpg", ".jpeg")):
-    """
-    Structure:
-
-        P_X/
-          P_X_S_Y/
-            labels_json/
-            color_frames_/
-            Cascade_Capture_pXX_sYY/
-                ear_frames/
-
-    We detect 'ear_frames', then go UP two levels to find labels_json
-    and color_frames_ and pair files by sorted order.
-    """
     items = []
 
     for root, dirs, files in os.walk(root_dir):
         if os.path.basename(root) == "ear_frames":
             ear_dir = root
-            cascade_dir = os.path.dirname(ear_dir)        # .../Cascade_Capture_pXX_sYY
-            session_dir = os.path.dirname(cascade_dir)    # .../P_X_S_Y
+            cascade_dir = os.path.dirname(ear_dir)
+            session_dir = os.path.dirname(cascade_dir)
 
             label_dir = os.path.join(session_dir, "labels_json")
             color_dir = os.path.join(session_dir, "color_frames_")
@@ -65,25 +48,37 @@ def build_items_multi(root_dir, image_exts=(".png", ".jpg", ".jpeg")):
 
 
 if __name__ == "__main__":
-    # TODO: adjust this if your dataset root moves
-    root_dir = r"C:\Users\n1071552\Desktop\projects\data_collectn\realsense_data_OD"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="config.yaml")
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+
+    root_dir = config["paths"]["train_root"]
+    split_json = config["paths"]["split_json"]
+    seed = config["split"]["seed"]
+    val_size = config["split"]["val_size"]
 
     items = build_items_multi(root_dir)
     n = len(items)
+
     if n == 0:
         raise RuntimeError(f"No samples found under {root_dir}")
 
     indices = list(range(n))
-    random.seed(42)  # FIXED for reproducibility
+    random.seed(seed)
     random.shuffle(indices)
 
-    split = int(0.80 * n)
+    # 👇 KEEP SUBJECT SPLIT
     split_dict = {
-        "train": indices[1062:],
-        "val":   indices[:1062]
+        "train": indices[val_size:],
+        "val": indices[:val_size]
     }
 
-    with open("dataset_split.json", "w") as f:
+    with open(split_json, "w") as f:
         json.dump(split_dict, f, indent=2)
 
-    print(f"\n✅ Saved dataset_split.json with {len(split_dict['train'])} train and {len(split_dict['val'])} val samples.\n")
+    print(
+        f"\n✅ Saved {split_json} with "
+        f"{len(split_dict['train'])} train and {len(split_dict['val'])} val samples.\n"
+    )
