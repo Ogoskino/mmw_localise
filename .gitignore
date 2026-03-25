@@ -1,3 +1,4 @@
+.gitignore
 __pycache__/
 best_visualisations/
 debug_vis/

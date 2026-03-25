@@ -19,7 +19,7 @@ The work focuses on:
 
 ## 🧠 Method Overview
 
-![Figure 1: Pipeline](docs/fig1_pipeline.png)
+![Figure 1: Pipeline](docs/fig1_pipeline.PNG)
 
 The pipeline:
 1. Raw radar `.mat` files are processed into EAR tensors  
@@ -46,7 +46,7 @@ This allows radar data to be treated as an **image problem**.
 
 ## 🧪 Detection Results
 
-![Figure 3: Detection Results](docs/fig3_results.png)
+![Figure 3: Detection Results](docs/fig3_results.PNG)
 
 Examples of successful detections using radar-derived pseudo-images.
 
@@ -74,7 +74,8 @@ mmw_localise/
 ├── run_rep_ablations.py
 ├── label_noise_proxy.py
 ├── yolo_utils.py
-├── config.yaml.example
+├── config.yaml
+├── config.py
 ├── requirements.txt
 ├── docs/
 │   ├── fig1_pipeline.png
@@ -260,11 +261,11 @@ If training from scratch, download pretrained weights:
 
 | Model | Link |
 |------|------|
-| YOLOv8 | [ADD LINK] |
-| YOLOv9 | [ADD LINK] |
-| YOLOv10 | [ADD LINK] |
-| YOLOv11 | [ADD LINK] |
-| YOLOv12 | [ADD LINK] |
+| YOLOv8 | https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.pt |
+| YOLOv9 | https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov9t.pt |
+| YOLOv10 | https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov10n.pt |
+| YOLOv11 | https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n.pt |
+| YOLOv12 | https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo12n.pt |
 
 Place in:
 
