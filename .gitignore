@@ -6,14 +6,19 @@ label_noise_proxy_out/
 runs/
 test_visualisations/
 yolo_radar_ds/
-yolo_radar_runs/
+yolo_radar_runs/DETR/
+yolo_radar_runs/yolov3/
+yolo_radar_runs/yolov*/*.jpg
+yolo_radar_runs/yolov*/*.png
+yolo_radar_runs/yolov*/*.csv
+yolo_radar_runs/yolov*/*.yaml
+yolo_radar_runs/yolov*/weights/last.pt
 yolo_radar_test_ds/
 yolo_radar_vis/
 yolo_test_images/
 build_rodnet_dataset.py
 export_to_rodnet.py
 make_rodnet_labels.py
-rtdetr-I.pt
 sample_images.ipynb
 train_yolo_radar.py
 train_frcnn_radar.py
@@ -25,3 +30,4 @@ yolov8n.pt
 yolov8s.pt
 yolov9t.pt
 yolov10n.pt
+split_all.json
