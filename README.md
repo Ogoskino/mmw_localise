@@ -3,6 +3,7 @@
 *Accepted at WCCI / IJCNN 2026*
 
 [📄 Read the paper](docs/wcci_ijcnn_2026_paper.pdf)
+
 ---
 
 ## 🔍 Overview
