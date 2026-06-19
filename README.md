@@ -1,6 +1,6 @@
 # 📡 mmw_localise  
-**Radar-Based Detection Using mmWave EAR Representations and YOLO**
-
+**Radar-Based Detection Using mmWave EAR Representations and YOLO (Accepted at WCCI IJCNN 2026)**
+[Read the WCCI paper](docs/WCCI_Towards_Detecting_Knife_Carrying_Individuals_Using_YOLO_and_mmWave_Radar_EAR_Representations_2026.pdf)
 ---
 
 ## 🔍 Overview
@@ -303,18 +303,6 @@ The evaluation pipeline reports:
 - Weak supervision (RGB → radar)  
 - No explicit sensor calibration  
 - Representation loses some geometric structure  
-
----
-
-## 📄 Citation
-
-```bibtex
-@inproceedings{okafor2026mmwaveyolo,
-  title={Radar-Based Detection Using YOLO and mmWave EAR Representations},
-  author={Okafor, Ogonna},
-  year={2026}
-}
-```
 
 ---
 
