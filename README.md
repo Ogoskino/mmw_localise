@@ -1,6 +1,8 @@
 # 📡 mmw_localise  
-**Radar-Based Detection Using mmWave EAR Representations and YOLO (Accepted at WCCI IJCNN 2026)**
-[Read the WCCI paper](docs/WCCI_Towards_Detecting_Knife_Carrying_Individuals_Using_YOLO_and_mmWave_Radar_EAR_Representations_2026.pdf)
+**Radar-Based Detection Using mmWave EAR Representations and YOLO**  
+*Accepted at WCCI / IJCNN 2026*
+
+[📄 Read the paper](docs/wcci_ijcnn_2026_paper.pdf)
 ---
 
 ## 🔍 Overview
